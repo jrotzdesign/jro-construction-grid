@@ -4,7 +4,7 @@
    CG_draw and CG_exportFrame each make one undo step and only ever touch the "Construction" and
    "Guideline frame" layers; the selected artwork is never selected for writing, moved or restyled. */
 
-var CG_VERSION = "0.1.1";
+var CG_VERSION = "0.1.2";
 var CG_LAYER = "Construction";
 var CG_FRAME_LAYER = "Guideline frame";
 var CG_PREFIX = "Grid · ";
@@ -162,7 +162,7 @@ function CG_collect(item, items, rejected, depth, ctx) {
   var t = item.typename, i;
   if (t === "PathItem") {
     if (item.guides || item.clipping) return;
-    items.push({ paths: [CG_pathData(item)] });
+    items.push({ name: item.name, paths: [CG_pathData(item)] });
   } else if (t === "CompoundPathItem") {
     var paths = [];
     for (i = 0; i < item.pathItems.length; i++) {
@@ -173,7 +173,7 @@ function CG_collect(item, items, rejected, depth, ctx) {
       var hidden = CG_hiddenGroups(ctx.doc, ctx)[item.uuid] || [];
       for (i = 0; i < hidden.length; i++) CG_groupPaths(hidden[i], paths, depth + 1);
     }
-    if (paths.length) items.push({ paths: paths });
+    if (paths.length) items.push({ name: item.name, paths: paths });
   } else if (t === "GroupItem") {
     for (i = 0; i < item.pageItems.length; i++) CG_collect(item.pageItems[i], items, rejected, depth + 1, ctx);
   } else {
@@ -210,7 +210,7 @@ function CG_read() {
     for (k in rej) if (rej.hasOwnProperty(k)) rejected.push({ reason: k, count: rej[k] });
     if (!items.length) CG_fail(rejected.length ? "nothing-readable" : "no-paths", "No paths in the selection.");
     var g = CG_gridGroup(doc, ab.name);
-    return { units: CG_units(doc), items: items, rejected: rejected, artboard: { index: ab.index, name: ab.name }, note: g ? g.note : null };
+    return { units: CG_units(doc), items: items, rejected: rejected, artboard: { index: ab.index, name: ab.name, rect: ab.rect }, note: g ? g.note : null };
   });
 }
 

@@ -309,8 +309,32 @@
       tangents: m.tangents.length,
       lines: m.lines.length,
       horizontals: m.horizontals.map(function (h) { return { label: h.label, y: h.y }; }),
-      rejected: Object.keys(reasons).map(function (k) { return { reason: k, count: reasons[k] }; })
+      rejected: Object.keys(reasons).map(function (k) {
+        var r = { reason: k, count: reasons[k] };
+        if (k === 'not circular') r.curves = curveList(m, input);
+        return r;
+      })
     };
+  }
+
+  // Where each curve that isn't a circle is: its shape (by name, or counted from the left) and its
+  // midpoint in artboard coordinates (y down, as Illustrator shows them), in the document's units.
+  function curveList(m, input) {
+    var items = input.items || [], rect = input.artboard && input.artboard.rect, unit = UNIT_PT[m.unit];
+    var left = items.map(function (it) {
+      var x = Infinity;
+      (it.paths || []).forEach(function (p) { p.points.forEach(function (q) { x = Math.min(x, q.anchor[0]); }); });
+      return x;
+    });
+    var order = left.map(function (x, i) { return i; }).sort(function (a, b) { return left[a] - left[b]; });
+    return m.rejected.filter(function (r) { return r.reason === 'not circular'; }).map(function (r) {
+      var ii = Number(String(r.segment.path).split('.')[0]), mid = at(r.segment, 0.5);
+      var p = rect ? [mid[0] - rect[0], rect[1] - mid[1]] : mid;
+      return {
+        element: items[ii].name || 'shape ' + (order.indexOf(ii) + 1) + ' from the left',
+        at: [Math.round(p[0] / unit * 10) / 10, Math.round(p[1] / unit * 10) / 10]
+      };
+    });
   }
 
   // ---------- draw model (what the host draws, grouped by element type) ----------

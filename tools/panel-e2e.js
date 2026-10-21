@@ -69,6 +69,8 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
     const jroGrid = g.groups.filter((x) => x.name === 'Grid · JRO');
     const inRect = (b, r) => { const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2; return cx >= r[0] && cx <= r[2] && cy <= r[1] && cy >= r[3]; };
     check('status reports the grid in plain words', /^Grid drawn on JRO: 17 smooth corners/.test(s.status), s.status);
+    // The R's leg (shape 2) has three curves that aren't circles; positions as the Info panel shows them.
+    check('the warning lists which curves aren\'t circles, and where', s.status.includes('3 curves aren\'t close enough to a circle to draw: shape 2 from the left at 786, 661 · 786, 690 · 796, 871 px.'), s.status);
     check('one grid group, named for the JRO artboard', g.groups.length === 1 && jroGrid.length === 1, g.groups.map((x) => x.name));
     // Every later step undoes what Generate drew; without a grid those undos would revert other steps.
     if (!jroGrid.length) throw new Error('Generate drew no grid, so the run stops here. Panel said: ' + s.status);

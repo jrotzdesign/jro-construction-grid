@@ -132,6 +132,12 @@ Checked 2026-10-21 against 0.1.1, rechecked against 0.1.2. "Fixed" means the ite
 - **`zOrderPosition` is wrong for text:** ok, it isn't used. Construction goes on top with
   `layer.zOrder(BRINGTOFRONT)`, and the e2e checks `doc.layers[0]`.
 - **`tags.add()` throws:** ok, it isn't used. Settings live in the grid group's `note`.
+- **New here, any selection change from a script is its own undo step:** measured on a fixture
+  copy after Generate, then one undo. Each of these left the grid, because the undo only put the
+  old selection back: `doc.selection = null`, `doc.selection = [path]`, `item.selected = false`
+  on each selected item, `executeMenuCommand("deselectall")`, and selecting anchors with
+  `PathPointSelection.ANCHORPOINT` after clearing. The second undo removed the grid. Setting
+  `.selected` on something already selected changes nothing and adds nothing.
 - **New here, the e2e's one-off undo miss was outside input:** 0.1.1's e2e once saw an undo
   that left the grid. A soak (`tools/undo-soak.js`) ran Generate, Regenerate and two undos
   many times. Runs missed only while someone used the Mac: the test brings Illustrator to the

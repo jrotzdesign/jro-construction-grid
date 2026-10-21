@@ -144,9 +144,24 @@
     if (m.unitOverrideLost) out.push("The circle you made 1 isn't in the selection any more, so the best fit is back.");
     m.report.rejected.forEach(function (r) {
       var w = REJECTED[r.reason];
-      if (w) out.push(r.count + " " + (r.count === 1 ? w[0] : w[1]) + ".");
+      if (w) out.push(r.count + " " + (r.count === 1 ? w[0] : w[1]) + (r.curves ? ": " + where(r.curves, m.unit) : "") + ".");
     });
     return out;
+  }
+
+  // "shape 2 from the left at 786, 661 · 786, 690 px", top to bottom, at most 4 positions.
+  function where(curves, unit) {
+    var shapes = [], at = {};
+    curves.slice().sort(function (a, b) { return a.at[1] - b.at[1] || a.at[0] - b.at[0]; }).forEach(function (c) {
+      if (!at[c.element]) { at[c.element] = []; shapes.push(c.element); }
+      at[c.element].push(Math.round(c.at[0]) + ", " + Math.round(c.at[1]));
+    });
+    var shown = 0;
+    return shapes.map(function (s) {
+      var list = at[s].slice(0, Math.max(0, 4 - shown));
+      shown += list.length;
+      return s + (list.length ? " at " + list.join(" · ") : "") + (list.length < at[s].length ? " and " + (at[s].length - list.length) + " more" : "");
+    }).join("; ") + " " + unit;
   }
 
   // ---------- status, report, controls ----------
