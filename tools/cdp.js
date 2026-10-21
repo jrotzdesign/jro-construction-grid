@@ -88,13 +88,14 @@ function session(p) {
     return ai('return typeof CG_VERSION === "string" ? CG_VERSION : "none";');
   };
 
-  // Opens a temporary copy of the committed fixture (never the fixture itself) and remembers the
-  // user's active document; close() shuts the copy unsaved and goes back to it.
-  const openCopy = async (label) => {
+  // Opens a temporary copy of the committed fixture, or of another file (never the file itself),
+  // and remembers the user's active document; close() shuts the copy unsaved and goes back to it.
+  const FIXTURE = path.resolve(__dirname, '..', 'test', 'fixtures', 'construction-grid-test.ai');
+  const openCopy = async (label, source = FIXTURE) => {
     const userDoc = await ai('return app.documents.length ? app.activeDocument.name : "";');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'construction-grid-' + label + '-'));
-    const copyPath = path.join(tmpDir, 'construction-grid-' + label + '.ai');
-    fs.copyFileSync(path.resolve(__dirname, '..', 'test', 'fixtures', 'construction-grid-test.ai'), copyPath);
+    const copyPath = path.join(tmpDir, 'construction-grid-' + label + path.extname(source));
+    fs.copyFileSync(source, copyPath);
     const name = await ai(`return app.open(new File(${JSON.stringify(copyPath)})).name;`);
     return {
       name,

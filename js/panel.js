@@ -151,17 +151,14 @@
 
   // "shape 2 from the left at 786, 661 · 786, 690 px", top to bottom, at most 4 positions.
   function where(curves, unit) {
+    var sorted = curves.slice().sort(function (a, b) { return a.at[1] - b.at[1] || a.at[0] - b.at[0]; });
     var shapes = [], at = {};
-    curves.slice().sort(function (a, b) { return a.at[1] - b.at[1] || a.at[0] - b.at[0]; }).forEach(function (c) {
+    sorted.slice(0, 4).forEach(function (c) {
       if (!at[c.element]) { at[c.element] = []; shapes.push(c.element); }
       at[c.element].push(Math.round(c.at[0]) + ", " + Math.round(c.at[1]));
     });
-    var shown = 0;
-    return shapes.map(function (s) {
-      var list = at[s].slice(0, Math.max(0, 4 - shown));
-      shown += list.length;
-      return s + (list.length ? " at " + list.join(" · ") : "") + (list.length < at[s].length ? " and " + (at[s].length - list.length) + " more" : "");
-    }).join("; ") + " " + unit;
+    var more = sorted.length - 4;
+    return shapes.map(function (s) { return s + " at " + at[s].join(" · "); }).join("; ") + " " + unit + (more > 0 ? " and " + more + " more" : "");
   }
 
   // ---------- status, report, controls ----------
