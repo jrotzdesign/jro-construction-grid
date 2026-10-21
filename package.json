@@ -1,6 +1,6 @@
 {
   "name": "jro-construction-grid",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Illustrator CEP panel that reads a logo's curves and draws its construction grid.",
   "scripts": {

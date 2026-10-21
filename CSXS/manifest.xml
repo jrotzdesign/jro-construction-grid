@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.jro.constructiongrid" ExtensionBundleVersion="0.1.1" ExtensionBundleName="Construction Grid" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.jro.constructiongrid" ExtensionBundleVersion="0.1.2" ExtensionBundleName="Construction Grid" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ExtensionList>
-    <Extension Id="com.jro.constructiongrid.panel" Version="0.1.1"/>
+    <Extension Id="com.jro.constructiongrid.panel" Version="0.1.2"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>

@@ -141,7 +141,7 @@
 
   function warnings(m) {
     var out = [];
-    if (m.unitOverrideLost) out.push("The circle you made 1 isn't in the selection any more, so the best fit is back.");
+    if (m.unitOverrideLost) out.push("The circle you made 1 isn't in the selection any more, so the grid uses the best fit again.");
     m.report.rejected.forEach(function (r) {
       var w = REJECTED[r.reason];
       if (w) out.push(r.count + " " + (r.count === 1 ? w[0] : w[1]) + (r.curves ? ": " + where(r.curves, m.unit) : "") + ".");
@@ -361,7 +361,7 @@
     });
     $("resetUnit").addEventListener("click", fresh(function () {
       state.pendingUnit = null;
-      if (state.peek && state.peek.hasGrid) generate(); else setStatus("", "The best-fit unit is used on the next Generate.");
+      if (state.peek && state.peek.hasGrid) generate(); else setStatus("", "The next Generate uses the best-fit unit.");
     }));
     $("generate").addEventListener("click", fresh(generate));
     $("exportFrame").addEventListener("click", fresh(exportFrame));

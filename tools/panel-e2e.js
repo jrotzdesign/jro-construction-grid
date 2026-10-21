@@ -48,6 +48,12 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
     check('window.Grid and window.SC are loaded in CEP', await p.evaluate('typeof window.Grid === "object" && typeof window.Grid.analyze === "function" && typeof window.SC === "object"'));
     const abs = await aiJSON(`var d = app.activeDocument, o = []; for (var i = 0; i < d.artboards.length; i++) o.push('{"name":' + CG_json(d.artboards[i].name) + ',"rect":[' + d.artboards[i].artboardRect.join(',') + ']}'); return '[' + o.join(',') + ']';`);
     const fp0 = await fingerprint();
+    // The first original item that differs from the start, with both versions, or null.
+    const untouched = async () => {
+      const a = JSON.parse(fp0).items, b = JSON.parse(await fingerprint()).items;
+      for (let i = 0; i < Math.max(a.length, b.length); i++) if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) return { item: i, was: a[i], now: b[i] };
+      return null;
+    };
 
     // Settings persist between runs: start with snap off.
     await p.evaluate(`(() => { const c = document.getElementById('snap'); if (c.checked) c.click(); return true; })()`);
@@ -78,7 +84,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
     check('Construction is the top layer and locked', g.top && g.locked, g);
     check('17 corners drawn with two ticks and a dot each', jroGrid[0]?.subs['Smooth corners'] === 17 * 4, jroGrid[0]?.subs);
     check('no new document appeared', (await docs()) === docsBefore + 1);
-    check('the logo is untouched', (await fingerprint()) === fp0);
+    { const d = await untouched(); check('the logo is untouched', !d, d); }
     s = await panel();
     check('button turns into Regenerate', s.button === 'REGENERATE' && !s.exportDisabled, s);
     const markB = (await aiJSON('return "[" + app.activeDocument.pageItems.getByName("JRO mark").geometricBounds.join(",") + "]";'));
@@ -90,7 +96,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
     await sleep(600);
     g = await grids();
     check('one undo removes the grid', g.groups.length === 0, g.groups.map((x) => x.name));
-    check('after undo the logo is untouched', (await fingerprint()) === fp0);
+    { const d = await untouched(); check('after undo the logo is untouched', !d, d); }
 
     // 3b. Capture the grid, then measure whether imageCapture added an undo step of its own.
     await sleep(1800);
@@ -168,7 +174,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
     console.log('  info grid styles ' + JSON.stringify(style));
     const src = style.find((x) => x.name === 'Grid · JRO'), dst = style.find((x) => x.name === 'Grid · ' + frame.name);
     check('the frame grid keeps the line weight', src && dst && Math.abs(dst.weight - src.weight) < 0.01, style);
-    check('after export the original logo is untouched', (await fingerprint()) === fp0);
+    { const d = await untouched(); check('after export the original logo is untouched', !d, d); }
     await capture('jro-guideline-frame', frame.rect);
     await undo();
     await sleep(600);
