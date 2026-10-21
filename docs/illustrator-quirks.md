@@ -101,7 +101,7 @@ Each of these cost time. All were seen in Illustrator 30.4.0 on macOS.
 
 ## How Construction Grid handles each
 
-Checked 2026-10-21 against 0.1.1. "Fixed" means the item was missed in 0.1.0 and is fixed now.
+Checked 2026-10-21 against 0.1.1, rechecked against 0.1.2. "Fixed" means the item was missed in 0.1.0 and is fixed now.
 
 ### Dialogs and alerts
 
@@ -132,6 +132,14 @@ Checked 2026-10-21 against 0.1.1. "Fixed" means the item was missed in 0.1.0 and
 - **`zOrderPosition` is wrong for text:** ok, it isn't used. Construction goes on top with
   `layer.zOrder(BRINGTOFRONT)`, and the e2e checks `doc.layers[0]`.
 - **`tags.add()` throws:** ok, it isn't used. Settings live in the grid group's `note`.
+- **New here, the e2e's one-off undo miss was outside input:** 0.1.1's e2e once saw an undo
+  that left the grid. A soak (`tools/undo-soak.js`) ran Generate, Regenerate and two undos
+  many times. Runs missed only while someone used the Mac: the test brings Illustrator to the
+  front, so a click lands there and changes the selection, or an arrow key nudges the logo.
+  That nudge adds an undo step, and our undo reverts it instead of the grid. With the Mac left
+  alone, 42 of 42 runs were right, across every timing tried. The soak now checks the
+  selection and the logo's position before each click and undo, and skips a run touched from
+  outside. Leave the Mac alone during the e2e and the soak.
 
 ### Compound paths
 
