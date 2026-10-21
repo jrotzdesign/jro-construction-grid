@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+# Third-party test logos: local only, never committed (PLAN.md Q11)
+test/fixtures/local/
+screenshots/local/

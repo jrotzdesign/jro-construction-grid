@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionList><Extension Id="com.jro.constructiongrid.panel"><HostList><Host Name="ILST" Port="8734"/></HostList></Extension></ExtensionList>

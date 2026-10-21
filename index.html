@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Construction Grid</title>
+<link rel="stylesheet" href="css/panel.css">
+<script>
+  /* Startup errors show as one plain line; details go to the debug console only. */
+  window.onerror = function (msg, src, line) {
+    try { console.info("[Construction Grid] " + msg + " (" + String(src || "").split("/").pop() + ":" + line + ")"); } catch (e) {}
+    var box = document.getElementById("status");
+    if (box) { box.className = "status err"; box.textContent = "The panel didn't load properly. Close it and open it again."; }
+    return true;
+  };
+</script>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">JRO Design · Construction grid</div>
+    <p class="live" id="live">Select a logo to draw its grid.</p>
+  </header>
+
+  <button class="btn primary" id="generate" disabled>Generate</button>
+
+  <div class="status" id="status" role="status"></div>
+
+  <section class="report hidden" id="report">
+    <div class="eyebrow row"><span>Found</span><span class="hint-inline">Click a row to make it 1</span></div>
+    <div id="rows"></div>
+  </section>
+
+  <button class="btn wide" id="exportFrame" disabled>Export guideline frame</button>
+
+  <details id="advanced">
+    <summary><span class="eyebrow">Advanced</span></summary>
+
+    <div class="block">
+      <div class="eyebrow row"><span>Fit tolerance</span><span class="value" id="fitText">Auto</span></div>
+      <input type="range" id="fitTol" min="0" max="50" step="1" value="0" aria-label="Fit tolerance">
+      <p class="hint">Auto keeps every drawn line within 0.5 pt of the art at presentation size.</p>
+    </div>
+
+    <div class="block">
+      <div class="eyebrow">Snap</div>
+      <label class="check"><input type="checkbox" id="snap"> Snap to the ratio series</label>
+      <div class="pair">
+        <select id="system" aria-label="Ratio series">
+          <option value="golden">Golden · φ</option>
+          <option value="root2">Root 2 · √2</option>
+          <option value="fibonacci">Fibonacci</option>
+          <option value="custom">Custom</option>
+          <option value="none">None</option>
+        </select>
+        <button class="btn small ghost" id="resetUnit">Reset unit</button>
+      </div>
+      <input type="text" id="custom" class="hidden" placeholder="Ratios, e.g. 1, 1.5, 2, 3" aria-label="Custom ratios">
+      <div class="eyebrow row sub"><span>Snap tolerance</span><span class="value" id="snapText">Auto</span></div>
+      <input type="range" id="snapTol" min="0" max="50" step="1" value="0" aria-label="Snap tolerance">
+    </div>
+
+    <div class="block">
+      <div class="eyebrow">Draw</div>
+      <div class="checks" id="draw"></div>
+    </div>
+
+    <div class="block">
+      <div class="eyebrow">Line style</div>
+      <div class="style-row">
+        <button class="swatch on" data-color="teal" id="swTeal" title="JRO teal"><i></i></button>
+        <button class="swatch" data-color="gray" id="swGray" title="Construction gray"><i></i></button>
+        <label class="num">Weight <input type="number" id="weight" min="0.05" max="5" step="0.05" value="0.25"> pt</label>
+      </div>
+      <label class="num">Label size <input type="number" id="labelSize" min="0.2" max="5" step="0.1" value="1.2"> % of logo</label>
+    </div>
+  </details>
+
+  <script src="js/CSInterface.js"></script>
+  <script src="js/vendor/engine-core.js"></script>
+  <script src="js/grid.js"></script>
+  <script src="js/panel.js"></script>
+</body>
+</html>
