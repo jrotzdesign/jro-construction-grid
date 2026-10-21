@@ -13,6 +13,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { connect, session, sleep, Timeout, manifestVersion, activate } = require('./cdp.js');
 
 const RUNS = Number(process.argv[2]) || 20;
@@ -20,9 +21,8 @@ const LOG = process.argv[3] || null;
 // 'e2e' repeats the 0.1.1 e2e's failing order exactly: activate, capture, activate, panel
 // screenshot, then undo with no wait. 'activate' sends the undo right after bringing Illustrator up.
 const CONDITIONS = ['plain', 'immediate', 'capture', 'snap', 'e2e', 'activate'];
-const { execFileSync } = require('node:child_process');
-// The frontmost app, read without any permission prompt (lsappinfo ships with macOS).
 class OutsideInput extends Error {}
+// The frontmost app, read without any permission prompt (lsappinfo ships with macOS).
 const front = () => { try { return /="([^"]+)"/.exec(execFileSync('lsappinfo', ['info', '-only', 'name', execFileSync('lsappinfo', ['front']).toString().trim()]).toString())[1]; } catch (e) { return '?'; } };
 
 (async () => {
@@ -31,7 +31,8 @@ const front = () => { try { return /="([^"]+)"/.exec(execFileSync('lsappinfo', [
   const lines = [];
   const log = (o) => { const l = JSON.stringify(o); lines.push(l); console.log(l); };
   const ids = async () => (await grids()).groups.filter((g) => g.name === 'Grid · JRO').map((g) => g.uuid);
-  // What is selected (top-level names) and which artboard is active, to tell selection changes apart.
+  // What is selected (top-level names), the active artboard and the JRO mark's bounds: a change
+  // in any of them means a click or nudge from outside the test.
   const sel = () => ai(`var d = app.activeDocument, s = d.selection, n = [];
     for (var i = 0; i < s.length && i < 4; i++) n.push(s[i].name || s[i].typename);
     var b = d.pageItems.getByName("JRO mark").geometricBounds;

@@ -384,7 +384,7 @@
     for (k in DRAW) on[k] = DRAW[k];
     for (k in opt.draw || {}) on[k] = opt.draw[k];
     var size = Math.max(5, 0.012 * ctx.size) * (opt.labelScale || 1), mark = 0.6 * size;
-    var groups = [], labels = [], boxes = [m.bounds];
+    var groups = [], labels = [];
     var put = function (name, items) { if (items.length) groups.push({ name: name, items: items }); };
 
     if (on.circles) put('Circles', m.circles.map(function (c) { return { kind: 'circle', c: c.drawC, r: c.drawR }; }));
@@ -417,12 +417,13 @@
     }
 
     if (on.labels) {
-      // Every drawn grid item blocks labels too, except a horizontal's own name in the margin.
-      // Leaders join the drawn items as they're placed; texts lists the placed label boxes.
+      // A label may not sit on the logo, another label or any drawn grid item, except a
+      // horizontal's own name in the margin. Leaders join the drawn items as they're placed.
       var drawn = [], texts = [];
       groups.forEach(function (g) { drawn = drawn.concat(g.items); });
       var crossings = function (box, own) {
-        return boxes.filter(function (b) { return overlaps(b, box); }).length +
+        return (overlaps(m.bounds, box) ? 1 : 0) +
+          texts.filter(function (b) { return overlaps(b, box); }).length +
           drawn.filter(function (it) { return it !== own && itemHits(it, box); }).length;
       };
       var clear = function (box, own) { return crossings(box, own) === 0; };
@@ -431,7 +432,7 @@
         var t = { kind: 'text', text: text, size: size, align: dir[0] < 0 ? 'right' : 'left', at: dir[1] < 0 ? [at[0], at[1] - size * 0.8] : at };
         return t;
       };
-      var keep = function (t) { boxes.push(textBox(t)); texts.push(textBox(t)); labels.push(t); };
+      var keep = function (t) { texts.push(textBox(t)); labels.push(t); };
       // The first option whose text and leader are clear, or the one crossing the fewest things.
       // The leader runs from the logo to just short of its text and may not cross another label.
       var placeWithLeader = function (text, options) {
