@@ -324,3 +324,17 @@ jro-construction-grid/
 - **Golden/root-2 unit ambiguity** (u vs u·φ) is handled by the tie-break, but the "1" chosen may not be the circle you think of first. The override exists for that.
 - **Clipped art:** content outside a clipping mask is still analyzed, because masks are skipped, not applied.
 - **Appearance-only geometry** (Offset Path effects, variable-width strokes, brushes) isn't read. Only path anchors are.
+
+---
+
+## 11. Build notes: where the code differs from this plan (2026-10-21)
+
+- **Corners can be split or back to back.** The JRO mark has both: Pathfinder or an added anchor split some corners into two 45° pieces, and its counters end in two R17 corners with no flat between them. A smooth run between straight edges is now partitioned into corners (fewest unexplained pieces first, then fewest corners, up to 6 pieces per corner). A multi-piece corner tries both Single curve (k search 0.30–1.20) and Smoothing (s search 0–1), and the closer rebuild wins. The leftover pieces go to circle fitting. Without this the mark read as off-series r ≈ 14.3 circle pairs.
+- **Unit tie-break.** The main rule is still the most clusters landing on the series, then the most members, then the smallest error. The tie-breaks after that: a real radius, then the most used, then the smallest. For φ and √2 the smallest breaks the u vs u·φ tie, so the smallest radius is 1 and labels read upward (`1 : 1.618`, `1 : 2.618`).
+- **Compound paths made from groups** report `pathItems.length === 0` in ExtendScript (the R and O bowls). Their groups are found through `doc.groupItems` whose parent is that compound, matched by uuid. Read-only.
+- **Arcs grow from whole segments** (Pathfinder puts anchors where circles meet), not from curvature splits.
+- **Labels.** Horizontal names sit in the left margin. One closer than a label height to the previous moves to the right margin (CAP HEIGHT and OVERSHOOT +1 px on JRO). Circle and corner labels leave the logo's bounds along the corner bisector or circle diagonal, step out until clear of other labels and horizontals, and get a leader line.
+- **Panel order.** Report and Export guideline frame sit above Advanced so they stay visible. Default size 280 × 420.
+- **Guideline frame.** The logo copy uses 15% opacity rather than fills tinted 15% toward white. It looks the same on white, and strokes, gradients and patterns need no special cases.
+- **Corner labels with snap off** carry no ratio (§5). With snap on they carry the series ratio: on JRO `R17 · 1 : 1`, `R44.5 · 1 : 2.618`, `R72 · 1 : 4.236`.
+- **Tools.** `tools/ai.js` is the only way tools reach Illustrator. It sets DONTDISPLAYALERTS before anything else, including `app.open`, runs in document coordinates, and stops after 20 s. `tools/panel-e2e.js` sends the same wrapper through the panel's evalScript. `tools/preview.js` renders a read to SVG for checking the analysis without Illustrator.
