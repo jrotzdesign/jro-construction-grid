@@ -4,6 +4,7 @@
    CG_draw and CG_exportFrame each make one undo step and only ever touch the "Construction" and
    "Guideline frame" layers; the selected artwork is never selected for writing, moved or restyled. */
 
+var CG_VERSION = "0.1.1";
 var CG_LAYER = "Construction";
 var CG_FRAME_LAYER = "Guideline frame";
 var CG_PREFIX = "Grid · ";
@@ -350,16 +351,19 @@ function CG_exportFrame(json) {
     layer.locked = false;
     frameLayer.move(layer, ElementPlacement.PLACEAFTER);
 
-    doc.selection = null;                         // duplicating a selected item can return nothing
+    // The selection is left alone: clearing and restoring it in a call that also changes the
+    // document makes Edit > Undo revert nothing. Duplicating a selected item works in the same doc.
     var logo = frameLayer.groupItems.add();
     logo.name = "Logo · " + ab.name;
     for (i = top.length - 1; i >= 0; i--) top[i].duplicate(logo, ElementPlacement.PLACEATBEGINNING);
     var copy = grid.duplicate(layer, ElementPlacement.PLACEATBEGINNING);
     copy.name = CG_PREFIX + ab.name;
 
+    // transform()'s line-width argument is a factor, not a percent: 1 keeps the grid's weights,
+    // o.scale scales the logo's own strokes with it.
     var b = logo.geometricBounds, s = o.scale * 100, m = app.getScaleMatrix(s, s);
-    logo.transform(m, true, true, true, true, s, Transformation.DOCUMENTORIGIN);
-    copy.transform(m, true, true, true, true, 100, Transformation.DOCUMENTORIGIN);
+    logo.transform(m, true, true, true, true, o.scale, Transformation.DOCUMENTORIGIN);
+    copy.transform(m, true, true, true, true, 1, Transformation.DOCUMENTORIGIN);
     b = logo.geometricBounds;
     var dx = (rect[0] + rect[2]) / 2 - (b[0] + b[2]) / 2, dy = (rect[1] + rect[3]) / 2 - (b[1] + b[3]) / 2;
     logo.translate(dx, dy);
@@ -367,7 +371,6 @@ function CG_exportFrame(json) {
     logo.opacity = 15;
     layer.locked = true;
 
-    for (i = 0; i < top.length; i++) top[i].selected = true;   // give the user back their selection
     return { artboard: ab.name, index: doc.artboards.length - 1 };
   });
 }

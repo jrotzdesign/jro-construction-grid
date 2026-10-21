@@ -49,4 +49,9 @@ function run(body, opts = {}) {
   }
 }
 
-module.exports = { run, wrap, Timeout, HOST };
+// Illustrator runs noticeably slower when it isn't the frontmost app, and captures need it in front.
+function activate() {
+  execFileSync('osascript', ['-e', 'tell application "Adobe Illustrator" to activate'], { timeout: 20000 });
+}
+
+module.exports = { run, wrap, activate, Timeout, HOST };

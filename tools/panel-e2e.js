@@ -7,9 +7,10 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { wrap } = require('./ai.js');
+const { wrap, activate } = require('./ai.js');
 
-const SHOTS = process.argv[2] || null;
+const SHOTS = process.argv[2] ? path.resolve(process.argv[2]) : null;   // Illustrator needs an absolute path
+if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const LIMIT_MS = 20000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -91,18 +92,31 @@ class Timeout extends Error {}
   const shots = [];
   const capture = async (name, rect) => {
     if (!SHOTS) return;
+    activate();
+    await sleep(500);
     const f = path.join(SHOTS, name + '.png');
     await ai(`var o = new ImageCaptureOptions(); o.resolution = 216; o.antiAliasing = true; o.transparency = false;
       app.activeDocument.imageCapture(new File(${JSON.stringify(f)}), [${rect.join(',')}], o); return "ok";`);
+    check('capture ' + name + ' was written', fs.existsSync(f) && fs.statSync(f).size > 0, f);
     shots.push(f);
   };
   const panelShot = async (name) => {
     if (!SHOTS) return;
+    activate();
+    await sleep(500);
     const r = await p.send('Page.captureScreenshot', { format: 'png' });
     const f = path.join(SHOTS, name + '.png');
     fs.writeFileSync(f, Buffer.from(r.result.data, 'base64'));
     shots.push(f);
   };
+
+  // Load the panel's current files: reloading re-runs panel.js, which loads jsx/host.jsx itself.
+  activate();
+  await p.send('Page.reload', { ignoreCache: true });
+  await sleep(2500);
+  const version = /ExtensionBundleVersion="([^"]+)"/.exec(fs.readFileSync(path.resolve(__dirname, '..', 'CSXS', 'manifest.xml'), 'utf8'))[1];
+  const hostVersion = await ai('return typeof CG_VERSION === "string" ? CG_VERSION : "none";');
+  check('the panel reloaded host.jsx ' + version, hostVersion === version, hostVersion);
 
   const userDoc = await ai('return app.documents.length ? app.activeDocument.name : "";');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'construction-grid-e2e-'));
@@ -115,6 +129,9 @@ class Timeout extends Error {}
     check('window.Grid and window.SC are loaded in CEP', await p.evaluate('typeof window.Grid === "object" && typeof window.Grid.analyze === "function" && typeof window.SC === "object"'));
     const abs = await aiJSON(`var d = app.activeDocument, o = []; for (var i = 0; i < d.artboards.length; i++) o.push('{"name":' + CG_json(d.artboards[i].name) + ',"rect":[' + d.artboards[i].artboardRect.join(',') + ']}'); return '[' + o.join(',') + ']';`);
     const fp0 = await fingerprint();
+
+    // Settings persist between runs: start with snap off.
+    await p.evaluate(`(() => { const c = document.getElementById('snap'); if (c.checked) c.click(); return true; })()`);
 
     // 1. Nothing selected: button off, plain instruction
     await select([]);
@@ -134,6 +151,8 @@ class Timeout extends Error {}
     const inRect = (b, r) => { const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2; return cx >= r[0] && cx <= r[2] && cy <= r[1] && cy >= r[3]; };
     check('status reports the grid in plain words', /^Grid drawn on JRO: 17 smooth corners/.test(s.status), s.status);
     check('one grid group, named for the JRO artboard', g.groups.length === 1 && jroGrid.length === 1, g.groups.map((x) => x.name));
+    // Every later step undoes what Generate drew; without a grid those undos would revert other steps.
+    if (!jroGrid.length) throw new Error('Generate drew no grid, so the run stops here. Panel said: ' + s.status);
     check('the grid sits on the JRO artboard', jroGrid[0] && inRect(jroGrid[0].bounds, abs[0].rect) && !abs.slice(1).some((a) => inRect(jroGrid[0].bounds, a.rect)), jroGrid[0]?.bounds);
     check('Construction is the top layer and locked', g.top && g.locked, g);
     check('17 corners drawn with two ticks and a dot each', jroGrid[0]?.subs['Smooth corners'] === 17 * 4, jroGrid[0]?.subs);
@@ -144,15 +163,29 @@ class Timeout extends Error {}
     const markB = (await aiJSON('return "[" + app.activeDocument.pageItems.getByName("JRO mark").geometricBounds.join(",") + "]";'));
     const pad = 0.32 * Math.max(markB[2] - markB[0], markB[1] - markB[3]);
     const shotRect = [markB[0] - pad, markB[1] + pad, markB[2] + pad, markB[3] - pad];
-    await capture('jro-grid', shotRect);
-    await panelShot('panel-after-generate');
 
-    // 3. One undo removes the whole grid
+    // 3. One undo removes the whole grid. Undo checks come before captures: see step 3b.
     await undo();
     await sleep(600);
     g = await grids();
     check('one undo removes the grid', g.groups.length === 0, g.groups.map((x) => x.name));
     check('after undo the logo is untouched', (await fingerprint()) === fp0);
+
+    // 3b. Capture the grid, then measure whether imageCapture added an undo step of its own.
+    await sleep(1800);
+    await click('generate');
+    await waitDone();
+    await capture('jro-grid', shotRect);
+    await panelShot('panel-after-generate');
+    if (SHOTS) {
+      await undo();
+      await sleep(600);
+      const kept = (await grids()).groups.length;
+      console.log('  info imageCapture ' + (kept ? 'adds an undo step: one undo after it left the grid' : 'adds no undo step'));
+      if (kept) { await undo(); await sleep(600); }
+      g = await grids();
+      check('no grid left before step 4', g.groups.length === 0, g.groups.map((x) => x.name));
+    }
 
     // 4. Snap on, Generate, then Regenerate three times: always exactly one group
     await p.evaluate(`(() => { const c = document.getElementById('snap'); if (!c.checked) c.click(); return c.checked; })()`);
@@ -172,12 +205,12 @@ class Timeout extends Error {}
     const texts = g.groups[0]?.texts || [];
     check('snapped labels read R17 · 1 : 1, R44.5 · 1 : 2.618, R72 · 1 : 4.236', ['R17 px · Single curve 69.2% · 1 : 1', 'R44.5 px · Single curve 69.2% · 1 : 2.618', 'R72 px · Single curve 69.2% · 1 : 4.236'].every((t) => texts.includes(t)), texts);
     check('the group note stores the settings', /^construction-grid \{"v":1,"system":"golden"/.test(g.groups[0]?.note || ''), g.groups[0]?.note);
-    await capture('jro-grid-golden', shotRect);
     await panelShot('panel-after-regenerate');
     await undo();
     await sleep(600);
     g = await grids();
     check('one undo after a Regenerate goes back one step, still one group', g.groups.length === 1, g.groups.map((x) => x.name));
+    await capture('jro-grid-golden', shotRect);   // the grid from the previous Regenerate, also snapped
 
     // 5. A second artboard gets its own grid; the JRO grid stays
     await select(['phi circle 20', 'phi circle 32.4', 'phi circle 52.4']);
@@ -199,6 +232,21 @@ class Timeout extends Error {}
     check('frame artboard is 1920 x 1080', Math.abs(frame.w - 1920) < 0.01 && Math.abs(frame.h - 1080) < 0.01, frame);
     check('logo copy is 648 tall (or 1536 wide) at 15% opacity', (Math.abs(frame.logoH - 648) < 0.5 || Math.abs(frame.logoW - 1536) < 0.5) && Math.abs(frame.opacity - 15) < 0.01, frame);
     check('status names the new artboard', /Guideline frame added/.test(s.status), s.status);
+    // Line weights and dot sizes of each grid: the frame's copy keeps the line weight it had.
+    const style = await aiJSON(`var L = app.activeDocument.layers.getByName("Construction"), out = [];
+      for (var i = 0; i < L.groupItems.length; i++) {
+        var g = L.groupItems[i]; if (g.parent.typename !== "Layer") continue;
+        var w = 0, dot = 0;
+        for (var j = 0; j < g.groupItems.length; j++) {
+          var sub = g.groupItems[j]; if (sub.parent.name !== g.name) continue;
+          for (var k = 0; k < sub.pathItems.length; k++) { var q = sub.pathItems[k]; if (q.stroked) w = Math.max(w, q.strokeWidth); else dot = Math.max(dot, q.width); }
+        }
+        out.push('{"name":' + CG_json(g.name) + ',"weight":' + w + ',"dot":' + dot + '}');
+      }
+      return '[' + out.join(',') + ']';`);
+    console.log('  info grid styles ' + JSON.stringify(style));
+    const src = style.find((x) => x.name === 'Grid · JRO'), dst = style.find((x) => x.name === 'Grid · ' + frame.name);
+    check('the frame grid keeps the line weight', src && dst && Math.abs(dst.weight - src.weight) < 0.01, style);
     check('after export the original logo is untouched', (await fingerprint()) === fp0);
     await capture('jro-guideline-frame', frame.rect);
     await undo();

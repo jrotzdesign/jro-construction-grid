@@ -2,7 +2,7 @@
 (function () {
   var cs = new CSInterface();
   var $ = function (id) { return document.getElementById(id); };
-  var POLL_MS = 800, HOST_TIMEOUT_MS = 20000, MAX_ROWS = 4;
+  var POLL_MS = 800, SLOW_MS = 20000, DROP_MS = 1000, MAX_ROWS = 4;
 
   // Everything the user can see in the status line. Raw script errors never reach it.
   var MESSAGES = {
@@ -16,6 +16,7 @@
     "no-grid": "Generate a grid for this artboard first.",
     "nothing-found": "No circles, corners or shared lines found in the selection.",
     "no-answer": "Illustrator didn't answer. Close any open dialog and try again.",
+    "slow": "Still waiting for Illustrator. If a dialog is open, close it.",
     "internal": "Something went wrong. Try again, or close and reopen the panel."
   };
 
@@ -45,7 +46,7 @@
     draw: { circles: true, smoothCorners: true, tangents: true, lines: true, horizontals: true, verticals: false, centers: true, labels: true, loose: false }
   };
 
-  var state = { busy: false, peek: null, model: null, settings: null, pendingUnit: undefined };
+  var state = { busy: false, peek: null, model: null, settings: null, pendingUnit: undefined, idleAt: 0, dropUntil: 0 };
 
   // ---------- settings (per-panel convenience, so localStorage is fine) ----------
 
@@ -65,25 +66,42 @@
 
   function PanelError(code, detail) { this.code = code; this.detail = detail; }
 
-  // Every non-ASCII character is escaped so host.jsx's payload whitelist holds; numbers keep 4 decimals.
+  // Every character outside host.jsx's payload whitelist (non-ASCII, and ASCII like "%" in labels)
+  // is sent as a \u escape, which only ever occurs inside JSON strings. Numbers keep 4 decimals.
   function payload(o) {
     return JSON.stringify(o, function (k, v) { return typeof v === "number" ? Math.round(v * 10000) / 10000 : v; })
-      .replace(/[\u007f-￿]/g, function (c) { return "\\u" + ("000" + c.charCodeAt(0).toString(16)).slice(-4); });
+      .replace(/[^\w \[\]{},:."+\-\\]/g, function (c) { return "\\u" + ("000" + c.charCodeAt(0).toString(16)).slice(-4); });
   }
 
+  // A call can't be cancelled, so the panel waits for the real answer with the buttons locked.
+  // Illustrator freezes this panel while a script runs, so the slow note can only show when the
+  // script hasn't started yet (an open dialog). A slow reply also drops clicks queued meanwhile.
   function host(fn, arg) {
-    var call = fn + "(" + (arg === undefined ? "" : JSON.stringify(arg)) + ")";
+    var call = fn + "(" + (arg === undefined ? "" : JSON.stringify(arg)) + ")", started = Date.now();
     return new Promise(function (resolve, reject) {
-      var done = false;
-      var timer = setTimeout(function () { done = true; reject(new PanelError("no-answer", "timeout: " + fn)); }, HOST_TIMEOUT_MS);
+      var slow = setTimeout(function () {
+        console.info("[Construction Grid] still waiting after " + SLOW_MS + " ms: " + fn);
+        if (fn !== "CG_probe") setStatus("err", MESSAGES.slow);
+      }, SLOW_MS);
       cs.evalScript(call, function (raw) {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
+        clearTimeout(slow);
+        if (Date.now() - started > SLOW_MS) state.dropUntil = performance.now() + DROP_MS;
         if (typeof raw !== "string" || raw.charAt(0) !== "{") { reject(new PanelError("no-answer", raw)); return; }
         var res;
         try { res = JSON.parse(raw); } catch (e) { reject(new PanelError("internal", "unparseable reply: " + raw.slice(0, 120))); return; }
         if (!res.ok) reject(new PanelError(res.code || "internal", res.error)); else resolve(res);
+      });
+    });
+  }
+
+  // The manifest's ScriptPath runs once per Illustrator session, so the panel loads host.jsx itself.
+  // $.evalFile has to run at the top level: inside a function it would define nothing global.
+  function loadHost() {
+    var f = cs.getExtensionPath() + "/jsx/host.jsx";
+    return new Promise(function (resolve) {
+      cs.evalScript("try { $.evalFile(new File(" + JSON.stringify(f) + ")); 'ok'; } catch (e) { 'ERR ' + e.message; }", function (raw) {
+        if (raw !== "ok") console.info("[Construction Grid] host.jsx didn't load: " + raw);
+        resolve();
       });
     });
   }
@@ -160,7 +178,7 @@
       b.className = "rowbtn" + (m.unitR != null && Math.abs(it.r - m.unitR) <= m.budget ? " unit" : "");
       b.title = "Make this radius 1";
       b.innerHTML = "<span>" + esc(it.text) + (it.flag ? " <span class=\"flag\">" + esc(it.flag) + "</span>" : "") + "</span><span class=\"n\">" + esc(it.n) + "</span>";
-      b.addEventListener("click", function () { state.pendingUnit = it.r; generate(); });
+      b.addEventListener("click", fresh(function () { state.pendingUnit = it.r; generate(); }));
       rows.appendChild(b);
     });
     if (items.length > MAX_ROWS) {
@@ -179,7 +197,21 @@
     $("exportFrame").disabled = !(ready && p.hasGrid);
   }
 
-  function setBusy(b) { state.busy = b; renderPeek(); }
+  function setBusy(b) {
+    state.busy = b;
+    if (!b) state.idleAt = performance.now();
+    renderPeek();
+  }
+
+  // Clicks made while Illustrator had the panel frozen arrive after the reply. Drop anything stamped
+  // before the panel went idle, and any click in the first second after a slow reply.
+  function fresh(handler) {
+    return function (ev) {
+      if (ev && ev.timeStamp < state.idleAt) return;
+      if (performance.now() < state.dropUntil) return;
+      handler();
+    };
+  }
 
   function tolText(v, m) {
     if (!v) return "Auto";
@@ -315,13 +347,13 @@
     DRAW_LABELS.forEach(function (d) {
       $("draw-" + d[0]).addEventListener("change", function () { state.settings.draw[d[0]] = this.checked; change(); });
     });
-    $("resetUnit").addEventListener("click", function () {
+    $("resetUnit").addEventListener("click", fresh(function () {
       state.pendingUnit = null;
       if (state.peek && state.peek.hasGrid) generate(); else setStatus("", "The best-fit unit is used on the next Generate.");
-    });
-    $("generate").addEventListener("click", generate);
-    $("exportFrame").addEventListener("click", exportFrame);
-    poll();
+    }));
+    $("generate").addEventListener("click", fresh(generate));
+    $("exportFrame").addEventListener("click", fresh(exportFrame));
+    loadHost().then(poll);
   }
 
   init();
