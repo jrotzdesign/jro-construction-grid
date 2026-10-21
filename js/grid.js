@@ -322,6 +322,39 @@
 
   function overlaps(a, b) { return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]; }
 
+  // Does segment a-b cross box r? (Liang-Barsky clipping.)
+  function segmentHits(a, b, r) {
+    var t0 = 0, t1 = 1, dx = b[0] - a[0], dy = b[1] - a[1];
+    var pq = [[-dx, a[0] - r[0]], [dx, r[2] - a[0]], [-dy, a[1] - r[1]], [dy, r[3] - a[1]]];
+    for (var i = 0; i < 4; i++) {
+      var p = pq[i][0], q = pq[i][1];
+      if (Math.abs(p) < 1e-12) { if (q < 0) return false; continue; }
+      if (p < 0) t0 = Math.max(t0, q / p); else t1 = Math.min(t1, q / p);
+      if (t0 > t1) return false;
+    }
+    return true;
+  }
+
+  // Does a drawn grid item cross box r? A circle's outline crosses it when the radius lies between
+  // the box's nearest and farthest points from the center; curves are checked as 16 chords each.
+  function itemHits(it, r) {
+    if (it.kind === 'line') return segmentHits(it.a, it.b, r);
+    if (it.kind === 'circle') {
+      var nx = Math.max(r[0], Math.min(it.c[0], r[2])), ny = Math.max(r[1], Math.min(it.c[1], r[3]));
+      var fx = Math.max(Math.abs(r[0] - it.c[0]), Math.abs(r[2] - it.c[0])), fy = Math.max(Math.abs(r[1] - it.c[1]), Math.abs(r[3] - it.c[1]));
+      return dist([nx, ny], it.c) <= it.r && it.r <= Math.sqrt(fx * fx + fy * fy);
+    }
+    if (it.kind === 'dot' || it.kind === 'cross') {
+      var h = it.kind === 'dot' ? it.r : it.size / 2;
+      return overlaps([it.c[0] - h, it.c[1] - h, it.c[0] + h, it.c[1] + h], r);
+    }
+    return it.segments.some(function (sg) {
+      var pts = sample({ p0: sg[0], p1: sg[1], p2: sg[2], p3: sg[3] }, 16);
+      for (var i = 1; i < pts.length; i++) if (segmentHits(pts[i - 1], pts[i], r)) return true;
+      return false;
+    });
+  }
+
   function drawModel(m, cornerGroups, opt, ctx) {
     var on = {}, k;
     for (k in DRAW) on[k] = DRAW[k];
@@ -347,7 +380,8 @@
     }
     if (on.tangents) put('Tangents', m.tangents.map(function (t) { return { kind: 'line', a: t.a, b: t.b }; }));
     if (on.lines) put('Lines', m.lines.map(function (l) { return { kind: 'line', a: l.a, b: l.b }; }));
-    if (on.horizontals) put('Horizontals', m.horizontals.map(function (h) { return { kind: 'line', a: h.a, b: h.b, dash: [4, 3] }; }));
+    var hItems = m.horizontals.map(function (h) { return { kind: 'line', a: h.a, b: h.b, dash: [4, 3] }; });
+    if (on.horizontals) put('Horizontals', hItems);
     if (on.verticals) put('Verticals', m.verticals.map(function (v) { return { kind: 'line', a: v.a, b: v.b, dash: [4, 3] }; }));
     if (on.centers) {
       var seen = [];
@@ -359,30 +393,39 @@
     }
 
     if (on.labels) {
-      // Horizontal lines block labels too, except the horizontal's own name in the margin.
-      var lineBoxes = on.horizontals ? m.horizontals.map(function (h) { return [h.a[0], h.y, h.b[0], h.y]; }) : [];
-      var clear = function (box) { return !boxes.concat(lineBoxes).some(function (b) { return overlaps(b, box); }); };
+      // Every drawn grid item blocks labels too, except a horizontal's own name in the margin.
+      // Leaders join the drawn items as they're placed; texts lists the placed label boxes.
+      var drawn = [], texts = [];
+      groups.forEach(function (g) { drawn = drawn.concat(g.items); });
+      var crossings = function (box, own) {
+        return boxes.filter(function (b) { return overlaps(b, box); }).length +
+          drawn.filter(function (it) { return it !== own && itemHits(it, box); }).length;
+      };
+      var clear = function (box, own) { return crossings(box, own) === 0; };
       var place = function (text, from, dir, gap) {
         var at = add(from, mul(dir, gap));
         var t = { kind: 'text', text: text, size: size, align: dir[0] < 0 ? 'right' : 'left', at: dir[1] < 0 ? [at[0], at[1] - size * 0.8] : at };
         return t;
       };
-      var placeFirstClear = function (text, options) {
-        var chosen = null;
-        for (var i = 0; i < options.length && !chosen; i++) {
-          var t = place(text, options[i].from, options[i].dir, options[i].gap);
-          if (clear(textBox(t))) chosen = { t: t, o: options[i] };
+      var keep = function (t) { boxes.push(textBox(t)); texts.push(textBox(t)); labels.push(t); };
+      // The first option whose text and leader are clear, or the one crossing the fewest things.
+      // The leader runs from the logo to just short of its text and may not cross another label.
+      var placeWithLeader = function (text, options) {
+        var chosen = null, least = Infinity;
+        for (var i = 0; i < options.length && least > 0; i++) {
+          var o = options[i], t = place(text, o.from, o.dir, o.gap);
+          var line = { kind: 'line', a: o.from, b: add(o.from, mul(o.dir, o.gap - 0.3 * size)) };
+          var n = crossings(textBox(t)) + texts.filter(function (b) { return segmentHits(line.a, line.b, b); }).length;
+          if (n < least) { least = n; chosen = { t: t, line: line }; }
         }
-        if (!chosen) chosen = { t: place(text, options[0].from, options[0].dir, options[0].gap), o: options[0] };
-        boxes.push(textBox(chosen.t));
-        labels.push(chosen.t);
-        return chosen;
+        keep(chosen.t);
+        labels.push(chosen.line);
+        drawn.push(chosen.line);
       };
-      var leader = function (ch) { labels.push({ kind: 'line', a: ch.o.from, b: add(ch.o.from, mul(ch.o.dir, ch.o.gap - 0.3 * size)) }); };
       // Leaving the logo along d, then further out in steps until clear of lines and labels.
       var outward = function (from, d) {
         var base = Math.max(1.5 * size, exitDistance(from, d, m.bounds) + 0.5 * size);
-        return [0, 1.5, 3, 4.5].map(function (step) { return { from: from, dir: d, gap: base + step * size }; });
+        return [0, 1.5, 3, 4.5, 6, 7.5, 9].map(function (step) { return { from: from, dir: d, gap: base + step * size }; });
       };
       var rotate = function (d, deg) { var c = Math.cos(deg * DEG), sn = Math.sin(deg * DEG); return [d[0] * c - d[1] * sn, d[0] * sn + d[1] * c]; };
 
@@ -391,9 +434,8 @@
         var y = h.y - size * 0.3, gap = 0.4 * size;
         var left = { kind: 'text', text: h.label, size: size, align: 'right', at: [h.a[0] - gap, y] };
         var right = { kind: 'text', text: h.label, size: size, align: 'left', at: [h.b[0] + gap, y] };
-        var t = clear(textBox(left)) || !clear(textBox(right)) ? left : right;
-        boxes.push(textBox(t));
-        labels.push(t);
+        var own = hItems[m.horizontals.indexOf(h)];
+        keep(clear(textBox(left), own) || !clear(textBox(right), own) ? left : right);
       });
       if (on.circles) m.clusters.forEach(function (cl) {
         var c = cl.circles.slice().sort(function (a, b) { return b.length - a.length; })[0];
@@ -402,9 +444,10 @@
           var d = [Math.cos(deg * DEG), Math.sin(deg * DEG)];
           options = options.concat(outward(add(c.drawC, mul(d, c.drawR)), d));
         });
-        leader(placeFirstClear(cl.label, options));
+        placeWithLeader(cl.label, options);
       });
-      if (on.smoothCorners) cornerGroups.forEach(function (g) {
+      // Groups with the fewest corners have the fewest spots to choose from, so they go first.
+      if (on.smoothCorners) cornerGroups.slice().sort(function (a, b) { return a.corners.length - b.corners.length; }).forEach(function (g) {
         var options = [];
         [0, 45, -45].forEach(function (deg) {
           g.corners.forEach(function (c) {
@@ -412,7 +455,7 @@
             options = options.concat(outward(c.V, d));
           });
         });
-        leader(placeFirstClear(g.label, options));
+        placeWithLeader(g.label, options);
       });
       put('Labels', labels);
     }
